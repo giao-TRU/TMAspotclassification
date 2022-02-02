@@ -31,5 +31,9 @@ In order to run a test, editing Utils/config.py with the path of training output
 <img src="Misc/demo.gif"></img>
 
 
+## Linked code: 
+https://github.com/thibo73800/capsnet-traffic-sign-classifier
+https://github.com/XifengGuo/CapsNet-Keras/blob/master/capsulenet.py
+https://machinelearningmastery.com/snapshot-ensemble-deep-learning-neural-network/
 
 
