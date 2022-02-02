@@ -22,6 +22,52 @@ import random
 import cv2
 import os
 
+
+from sklearn.datasets import make_blobs
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.callbacks import Callback
+from keras.optimizers import SGD
+from keras import backend as K
+from math import pi
+from math import cos
+from math import floor
+
+# snapshot ensemble with custom learning rate schedule
+class SnapshotEnsemble(Callback):
+	# constructor
+	def __init__(self, n_epochs, n_cycles, lrate_max, verbose=0):
+		self.epochs = n_epochs
+		self.cycles = n_cycles
+		self.lr_max = lrate_max
+		self.lrates = list()
+
+	# calculate learning rate for epoch
+	def cosine_annealing(self, epoch, n_epochs, n_cycles, lrate_max):
+		epochs_per_cycle = floor(n_epochs/n_cycles)
+		cos_inner = (pi * (epoch % epochs_per_cycle)) / (epochs_per_cycle)
+		return lrate_max/2 * (cos(cos_inner) + 1)
+
+	# calculate and set learning rate at the start of the epoch
+	def on_epoch_begin(self, epoch, logs={}):
+		# calculate learning rate
+		lr = self.cosine_annealing(epoch, self.epochs, self.cycles, self.lr_max)
+		# set learning rate
+		K.set_value(self.model.optimizer.lr, lr)
+		# log value
+		self.lrates.append(lr)
+
+	# save models at the end of each cycle
+	def on_epoch_end(self, epoch, logs={}):
+		# check if we can save model
+		epochs_per_cycle = floor(self.epochs / self.cycles)
+		if epoch != 0 and (epoch + 1) % epochs_per_cycle == 0:
+			# save model to file
+			filename = "snapshot_model_%d.h5" % int((epoch + 1) / epochs_per_cycle)
+			self.model.save(filename)
+			print('>saved snapshot %s, epoch %d' % (filename, epoch))
+
+
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-d", "--dataset", required=True,
@@ -80,9 +126,9 @@ for imagePath in imagePaths:
 	label = imagePath.split(os.path.sep)[-2]
 
 	if label == "Outlier":
-                label = 0 
+                label = 0
 	if label == "Normal":
-                label = 1 
+                label = 1
 	if label == "Tumor":
                 label = 2
 	labels.append(label)
@@ -107,7 +153,7 @@ aug = ImageDataGenerator(rotation_range=30, width_shift_range=0.1,
 	horizontal_flip=True, fill_mode="nearest")
 
 
-                
+
 # initialize the model
 print("[INFO] compiling model...")
 model = LeNet.build(width=w, height=h, depth=3, classes=num_classes)
@@ -117,23 +163,23 @@ opt = Adam(lr=INIT_LR, decay=INIT_LR / EPOCHS)
 model.compile(loss="binary_crossentropy", optimizer=opt,
 	metrics=["accuracy"])
 
-outFolder = args["output"]         
+outFolder = args["output"]
 try:
         os.stat(outFolder)
 except:
         os.mkdir(outFolder)
-        
+
 # train the network
 print("[INFO] training network...")
 # checkpoint
 filepath=outFolder+"/Lenet_weights-improvement-{epoch:02d}-{val_acc:.2f}.h5"
 checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
-callbacks_list = [checkpoint]
+
+# create snapshot ensemble callback
+n_epochs = 500
+n_cycles = n_epochs / 50
+ca = SnapshotEnsemble(n_epochs, n_cycles, 0.01)
 
 H = model.fit_generator(aug.flow(trainX, trainY, batch_size=BS),
         validation_data=(testX, testY), steps_per_epoch=len(trainX) // BS,
-        epochs=EPOCHS, callbacks=callbacks_list, verbose=1)
-
-
-
-
+        epochs=EPOCHS, callbacks=[checkpoint,ca], verbose=1)
